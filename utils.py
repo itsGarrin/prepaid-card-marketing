@@ -2,6 +2,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
+from joblib import Parallel, delayed
+from sklearn.feature_selection import VarianceThreshold
 from sklearn.metrics import (
     accuracy_score,
     precision_score,
@@ -13,50 +15,102 @@ from sklearn.metrics import (
 )
 from sklearn.metrics import roc_curve, roc_auc_score
 from statsmodels.stats.outliers_influence import variance_inflation_factor
+from tqdm.notebook import tqdm
+
+import pandas as pd
+import numpy as np
+from sklearn.feature_selection import VarianceThreshold
+from tqdm.notebook import tqdm
+
+import pandas as pd
+import numpy as np
+from sklearn.feature_selection import VarianceThreshold
+from tqdm.notebook import tqdm
 
 
-def calculate_vif(
-    data: pd.DataFrame, threshold: float = 5, removed_variables: list = None
-) -> pd.DataFrame:
+def calculate_vif(data: pd.DataFrame, vif_threshold: float = 5, correlation_threshold: float = 0.95,
+                  variance_threshold: float = 1e-6) -> pd.DataFrame:
     """
-    Calculate and remove variables with high Variance Inflation Factor (VIF) from a DataFrame.
+    Iteratively calculate and remove variables with high Variance Inflation Factor (VIF) and high correlation.
 
-    This function recursively calculates the VIF for each variable in the provided DataFrame.
-    Variables with a VIF greater than the specified threshold are removed to reduce multicollinearity.
-    The function prints the names of the removed variables and their VIF values once the recursion is complete.
+    This function calculates the VIF for each variable in the provided DataFrame, removes variables with high correlation
+    (greater than `correlation_threshold`), and removes variables with high VIF (greater than `vif_threshold`).
+    It prints the names of removed variables and their VIF values once the process is complete.
+    A progress bar shows the progress of removing high VIF and highly correlated features.
 
     Parameters:
     ----------
     data : pd.DataFrame
         The input DataFrame containing the variables to be evaluated.
-    threshold : float, optional
+    vif_threshold : float, optional
         The VIF threshold above which variables will be removed. Default is 5.
-    removed_variables : list, optional
-        A list to collect the names and VIF values of removed variables during recursion. Default is None.
+    correlation_threshold : float, optional
+        The correlation threshold above which variables will be removed. Default is 0.95.
+    variance_threshold : float, optional
+        Minimum variance threshold below which columns are removed before VIF calculation to avoid divide-by-zero errors.
+    n_jobs : int, optional
+        The number of jobs to run in parallel for VIF calculation. Default is -1 (use all available cores).
 
     Returns:
     -------
     pd.DataFrame
-        The DataFrame with variables having VIF greater than the threshold removed.
+        The DataFrame with variables having high VIF or high correlation removed.
     """
-    if removed_variables is None:
-        removed_variables = []
+    removed_variables = []
 
-    vif = pd.DataFrame()
-    vif["variables"] = data.columns
-    vif["VIF"] = [
-        variance_inflation_factor(data.values, i) for i in range(data.shape[1])
-    ]
-    vif = vif.sort_values(by="VIF", ascending=False)
+    # Remove invariant features
+    selector = VarianceThreshold(threshold=variance_threshold)
+    selector.fit(data)
+    data = data[data.columns[selector.get_support(indices=True)]]
 
-    if vif["VIF"].max() > threshold:
-        removed_variable = vif.iloc[0]
-        removed_variables.append(
-            (removed_variable["variables"], removed_variable["VIF"])
-        )
-        data = data.drop(removed_variable["variables"], axis=1)
-        return calculate_vif(data, threshold, removed_variables)
+    # Remove highly correlated variables
+    corr_matrix = data.corr().abs()
+    upper_triangle = np.triu(corr_matrix.values, 1)  # Upper triangle of the correlation matrix
+    correlated_vars = set()
 
+    # Iterate over the upper triangle to find pairs of highly correlated variables
+    for i in range(len(upper_triangle)):
+        for j in range(i + 1, len(upper_triangle[i])):
+            if upper_triangle[i, j] > correlation_threshold:
+                correlated_vars.add(corr_matrix.columns[j])
+
+    # Remove highly correlated columns
+    if correlated_vars:
+        data = data.drop(columns=correlated_vars)
+        print(f"Removed highly correlated variables: {list(correlated_vars)}")
+
+    # Start the process of removing variables with high VIF
+    with tqdm(total=len(data.columns), desc="Removing high VIF and correlated variables") as pbar:
+        while True:
+            # Calculate VIF using matrix operations after each removal
+            corr_matrix = data.corr()  # Compute the correlation matrix
+            inv_corr_matrix = np.linalg.inv(corr_matrix)  # Inverse of the correlation matrix
+
+            # VIF is the diagonal of the inverse correlation matrix
+            vif_values = np.diag(inv_corr_matrix)
+
+            # Store VIF results in a DataFrame for easy access
+            vif_df = pd.DataFrame({
+                'variables': data.columns,
+                'VIF': vif_values
+            })
+
+            # Find the variable with the highest VIF
+            max_vif_row = vif_df.loc[vif_df['VIF'].idxmax()]
+            max_vif = max_vif_row['VIF']
+            removed_var = max_vif_row['variables']
+
+            # If the highest VIF is above the threshold, remove the variable
+            if max_vif > vif_threshold:
+                data = data.drop(columns=removed_var)
+                removed_variables.append((removed_var, max_vif))
+                pbar.set_postfix({"Removed": removed_var, "VIF": max_vif})
+                pbar.update(1)
+                print(f"Removed variable: {removed_var} with VIF: {max_vif:.2f}")
+            else:
+                break
+
+    # Print out the removed variables and their VIF values
     if removed_variables:
         print("Removed variables with high VIF:")
         for var, vif_value in removed_variables:
@@ -219,7 +273,7 @@ def evaluate_models(
     summary_df.set_index("Metric", inplace=True)
 
     # Combine the results_combined DataFrame with the summary DataFrame
-    final_results = results_combined.join(summary_df)
+    final_results = results_combined.join(summary_df, how="left", on=None, validate="many_to_many")
 
     return final_results
 
