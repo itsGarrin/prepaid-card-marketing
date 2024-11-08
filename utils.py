@@ -2,7 +2,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
-from joblib import Parallel, delayed
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.metrics import (
     accuracy_score,
@@ -14,17 +13,8 @@ from sklearn.metrics import (
     r2_score
 )
 from sklearn.metrics import roc_curve, roc_auc_score
-from statsmodels.stats.outliers_influence import variance_inflation_factor
-from tqdm.notebook import tqdm
-
-import pandas as pd
-import numpy as np
-from sklearn.feature_selection import VarianceThreshold
-from tqdm.notebook import tqdm
-
-import pandas as pd
-import numpy as np
-from sklearn.feature_selection import VarianceThreshold
+from tensorflow.keras import backend as K
+import tensorflow as tf
 from tqdm.notebook import tqdm
 
 
@@ -322,3 +312,44 @@ def plot_coefficients(ols_results: sm, highlight_vars=None, significance_level=0
     plt.tight_layout()  # Adjust layout to prevent clipping
     plt.show()
 
+def plot_loss(history):
+    """
+    Plot the training and validation loss for a Keras model.
+
+    Parameters:
+    ----------
+    history : keras.callbacks.History
+        The history object returned by the model.fit() function.
+
+    Returns:
+    -------
+    None
+    """
+    plt.figure(figsize=(8, 6))
+    plt.plot(history.history["loss"], label="Training Loss")
+    plt.plot(history.history["val_loss"], label="Validation Loss")
+    plt.title("Model Loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.legend()
+    plt.grid()
+    plt.show()
+
+
+def f1_score(y_true, y_pred):
+    # Ensure both y_true and y_pred are of type float32
+    y_true = tf.cast(y_true, tf.float32)
+    y_pred = tf.cast(tf.round(y_pred), tf.float32)
+
+    # Calculate true positives, false positives, and false negatives
+    tp = K.sum(y_true * y_pred)
+    fp = K.sum((1 - y_true) * y_pred)
+    fn = K.sum(y_true * (1 - y_pred))
+
+    # Calculate precision and recall
+    precision = tp / (tp + fp + K.epsilon())
+    recall = tp / (tp + fn + K.epsilon())
+
+    # Calculate F1 score
+    f1 = 2 * (precision * recall) / (precision + recall + K.epsilon())
+    return f1
