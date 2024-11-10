@@ -334,22 +334,3 @@ def plot_loss(history):
     plt.legend()
     plt.grid()
     plt.show()
-
-
-def f1_score(y_true, y_pred):
-    # Ensure both y_true and y_pred are of type float32
-    y_true = tf.cast(y_true, tf.float32)
-    y_pred = tf.cast(tf.round(y_pred), tf.float32)
-
-    # Calculate true positives, false positives, and false negatives
-    tp = K.sum(y_true * y_pred)
-    fp = K.sum((1 - y_true) * y_pred)
-    fn = K.sum(y_true * (1 - y_pred))
-
-    # Calculate precision and recall
-    precision = tp / (tp + fp + K.epsilon())
-    recall = tp / (tp + fn + K.epsilon())
-
-    # Calculate F1 score
-    f1 = 2 * (precision * recall) / (precision + recall + K.epsilon())
-    return f1
