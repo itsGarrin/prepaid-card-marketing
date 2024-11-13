@@ -13,8 +13,6 @@ from sklearn.metrics import (
     r2_score
 )
 from sklearn.metrics import roc_curve, roc_auc_score
-from tensorflow.keras import backend as K
-import tensorflow as tf
 from tqdm.notebook import tqdm
 
 
@@ -183,9 +181,9 @@ def evaluate_models(
     def compute_classification_metrics(y_true, y_pred):
         return {
             "Accuracy": accuracy_score(y_true, y_pred),
-            "Precision": precision_score(y_true, y_pred),
-            "Recall": recall_score(y_true, y_pred),
-            "F1 Score": f1_score(y_true, y_pred),
+            "Overall Precision": precision_score(y_true, y_pred, average='weighted'),
+            "Overall Recall": recall_score(y_true, y_pred, average='weighted'),
+            "Overall F1 Score": f1_score(y_true, y_pred, average='weighted'),
             "Positive Precision": precision_score(y_true, y_pred, pos_label=1),
             "Negative Precision": precision_score(y_true, y_pred, pos_label=0),
             "Positive Recall": recall_score(y_true, y_pred, pos_label=1),
