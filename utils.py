@@ -147,29 +147,36 @@ def plot_roc_curve(y_true, y_proba, model_name="Model"):
 
 
 def evaluate_models(
-        models: list, predictions_base: list, predictions_hyper: list, X: pd.DataFrame, y_test: list,
+        models: list, predictions_base_train: list, predictions_base_test: list,
+        predictions_hyper_train: list, predictions_hyper_test: list, X: pd.DataFrame, y_train: list, y_test: list,
         task: str = 'classification'
 ) -> pd.DataFrame:
     """
-    Compare the performance of base models and models with hyperparameter tuning.
+    Compare the performance of base models and models with hyperparameter tuning on both training and testing data.
     Returns a DataFrame with detailed metrics for each model.
 
     Parameters:
     ----------
-    models : list.
+    models : list
         List of model names.
-    predictions_base : list.
-        List of predicted values from the base models.
-    predictions_hyper : list.
-        List of predicted values from hyperparameter-tuned models.
-    y_test : array-like.
-        Ground truth (correct) labels for the test set.
-    task : str.
+    predictions_base_train : list
+        List of predicted values from the base models on the training set.
+    predictions_base_test : list
+        List of predicted values from the base models on the testing set.
+    predictions_hyper_train : list
+        List of predicted values from hyperparameter-tuned models on the training set.
+    predictions_hyper_test : list
+        List of predicted values from hyperparameter-tuned models on the testing set.
+    y_train : array-like
+        Ground truth (correct) labels for the training set.
+    y_test : array-like
+        Ground truth (correct) labels for the testing set.
+    task : str
         Type of evaluation ('classification' or 'regression').
 
     Returns:
     -------
-    pd.DataFrame.
+    pd.DataFrame
         A DataFrame with detailed metrics for both base and hyperparameter-tuned models.
     """
 
@@ -193,76 +200,88 @@ def evaluate_models(
             "Mean Squared Error": mean_squared_error(y_true, y_pred),
             "Root Mean Squared Error": np.sqrt(mean_squared_error(y_true, y_pred)),
             "R-squared": r2_score(y_true, y_pred),
-            "Adjusted R-squared": 1 - (1-r2_score(y_true, y_pred))*(len(y_true)-1)/(len(y_true)-X.shape[1]-1)
+            "Adjusted R-squared": 1 - (1 - r2_score(y_true, y_pred)) * (len(y_true) - 1) / (
+                        len(y_true) - X.shape[1] - 1)
         }
 
     # Check for input validity
-    if len(predictions_base) != len(models) or len(predictions_hyper) != len(models):
+    if len(predictions_base_train) != len(models) or len(predictions_base_test) != len(models) or \
+            len(predictions_hyper_train) != len(models) or len(predictions_hyper_test) != len(models):
         raise ValueError("The number of predictions must match the number of models.")
 
-    if len(y_test) == 0:
-        raise ValueError("y_test cannot be empty.")
+    if len(y_test) == 0 or len(y_train) == 0:
+        raise ValueError("y_test and y_train cannot be empty.")
 
-    # Compute metrics for both types of models
-    all_metrics_base = {}
-    all_metrics_hyper = {}
+    # Compute metrics for both training and testing data
+    all_metrics_train_base = {}
+    all_metrics_test_base = {}
+    all_metrics_train_hyper = {}
+    all_metrics_test_hyper = {}
 
-    for model, y_pred_base, y_pred_hyper in zip(models, predictions_base, predictions_hyper):
+    for model, y_pred_base_train, y_pred_base_test, y_pred_hyper_train, y_pred_hyper_test in zip(
+            models, predictions_base_train, predictions_base_test, predictions_hyper_train, predictions_hyper_test):
+
         if task == 'classification':
-            all_metrics_base[model] = compute_classification_metrics(y_test, y_pred_base)
-            all_metrics_hyper[model] = compute_classification_metrics(y_test, y_pred_hyper)
+            all_metrics_train_base[model] = compute_classification_metrics(y_train, y_pred_base_train)
+            all_metrics_test_base[model] = compute_classification_metrics(y_test, y_pred_base_test)
+            all_metrics_train_hyper[model] = compute_classification_metrics(y_train, y_pred_hyper_train)
+            all_metrics_test_hyper[model] = compute_classification_metrics(y_test, y_pred_hyper_test)
         elif task == 'regression':
-            all_metrics_base[model] = compute_regression_metrics(y_test, y_pred_base)
-            all_metrics_hyper[model] = compute_regression_metrics(y_test, y_pred_hyper)
+            all_metrics_train_base[model] = compute_regression_metrics(y_train, y_pred_base_train)
+            all_metrics_test_base[model] = compute_regression_metrics(y_test, y_pred_base_test)
+            all_metrics_train_hyper[model] = compute_regression_metrics(y_train, y_pred_hyper_train)
+            all_metrics_test_hyper[model] = compute_regression_metrics(y_test, y_pred_hyper_test)
         else:
             raise ValueError("Task must be either 'classification' or 'regression'.")
 
-    # Initialize the DataFrame structure
-    metrics = list(all_metrics_base[models[0]].keys())
+    # Initialize DataFrames for training and testing results
+    metrics = list(all_metrics_train_base[models[0]].keys())
 
-    results_base = pd.DataFrame(index=metrics, columns=models)
-    results_hyper = pd.DataFrame(index=metrics, columns=models)
+    results_train_base = pd.DataFrame(index=metrics, columns=models)
+    results_test_base = pd.DataFrame(index=metrics, columns=models)
+    results_train_hyper = pd.DataFrame(index=metrics, columns=models)
+    results_test_hyper = pd.DataFrame(index=metrics, columns=models)
 
-    # Fill the DataFrames with metrics
+    # Fill DataFrames with metrics
     for model in models:
         for metric in metrics:
-            results_base.loc[metric, model] = all_metrics_base[model][metric]
-            results_hyper.loc[metric, model] = all_metrics_hyper[model][metric]
+            results_train_base.loc[metric, model] = all_metrics_train_base[model][metric]
+            results_test_base.loc[metric, model] = all_metrics_test_base[model][metric]
+            results_train_hyper.loc[metric, model] = all_metrics_train_hyper[model][metric]
+            results_test_hyper.loc[metric, model] = all_metrics_test_hyper[model][metric]
 
-    # Combine the base and hyperparameter-tuning results by concatenating vertically
-    results_base["Type"] = "Base"
-    results_hyper["Type"] = "Hyperparameter Tuning"
+    # Label each DataFrame for concatenation
+    results_train_base["Type"] = "Train - Base"
+    results_test_base["Type"] = "Test - Base"
+    results_train_hyper["Type"] = "Train - Hyperparameter Tuning"
+    results_test_hyper["Type"] = "Test - Hyperparameter Tuning"
 
-    results_combined = pd.concat([results_base, results_hyper])
+    # Combine all results
+    results_combined = pd.concat([results_train_base, results_test_base, results_train_hyper, results_test_hyper])
 
     results_combined.reset_index(inplace=True)
     results_combined.rename(columns={"index": "Metric"}, inplace=True)
-
     results_combined.set_index(["Metric", "Type"], inplace=True)
 
-    # Create a single summary column for both base and hyperparameter tuning
+    # Summarize the best models for each metric on test data
     summary_list = []
-
     for metric in metrics:
-        base_values = results_combined.xs("Base", level=1).loc[metric]
-        hyper_values = results_combined.xs("Hyperparameter Tuning", level=1).loc[metric]
+        base_values_test = results_combined.xs("Test - Base", level=1).loc[metric]
+        hyper_values_test = results_combined.xs("Test - Hyperparameter Tuning", level=1).loc[metric]
 
-        if task == 'regression' and metric == "R-squared" or metric == "Adjusted R-squared" or task == 'classification':
-            best_value = max(base_values.max(), hyper_values.max())
-            best_model = base_values.idxmax() if base_values.max() >= hyper_values.max() else hyper_values.idxmax()
+        if task == 'regression' and metric in ["R-squared", "Adjusted R-squared"] or task == 'classification':
+            best_value = max(base_values_test.max(), hyper_values_test.max())
+            best_model = base_values_test.idxmax() if base_values_test.max() >= hyper_values_test.max() else hyper_values_test.idxmax()
         else:
-            best_value = min(base_values.min(), hyper_values.min())
-            best_model = base_values.idxmin() if base_values.min() <= hyper_values.min() else hyper_values.idxmin()
+            best_value = min(base_values_test.min(), hyper_values_test.min())
+            best_model = base_values_test.idxmin() if base_values_test.min() <= hyper_values_test.min() else hyper_values_test.idxmin()
 
-        summary_list.append(
-            {"Metric": metric, "Best Model": best_model, "Best Value": best_value}
-        )
+        summary_list.append({"Metric": metric, "Best Model": best_model, "Best Value": best_value})
 
     summary_df = pd.DataFrame(summary_list)
-
     summary_df.set_index("Metric", inplace=True)
 
-    # Combine the results_combined DataFrame with the summary DataFrame
+    # Combine the combined results DataFrame with the summary DataFrame
     final_results = results_combined.join(summary_df, how="left", on=None, validate="many_to_many")
 
     return final_results
